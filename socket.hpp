@@ -24,8 +24,8 @@ class socket_t {
 
     int make_socket( void );
 
-    void send_to( message_t message, sockaddr_in &address);
-    void recieve_from( message_t message, sockaddr_in &address);
+    void send_to( message_t& message, sockaddr_in &address);
+    void recieve_from( message_t& message, sockaddr_in &address);
 
 };
 
@@ -47,7 +47,7 @@ int socket_t::make_socket( void ) {
 }
 
 
-void socket_t::send_to( message_t message, sockaddr_in &address) {
+void socket_t::send_to( message_t& message, sockaddr_in &address) {
   int result = sendto(fd_, &message, sizeof(message), 0, reinterpret_cast<const sockaddr*>(&address), sizeof(address));
 
   if ( result < 0 ) {
@@ -57,7 +57,7 @@ void socket_t::send_to( message_t message, sockaddr_in &address) {
 }
 
 
-void socket_t::recieve_from( message_t message, sockaddr_in &address) {
+void socket_t::recieve_from( message_t& message, sockaddr_in &address) {
 
   socklen_t src_len = sizeof(address); ///Cambiar esto
 
@@ -67,11 +67,4 @@ void socket_t::recieve_from( message_t message, sockaddr_in &address) {
     std::cerr << "Falló rcvfrom()" << std::endl;
     return;
   }
-
-  message.text[254] = '\0';
-  std::string recieved;
-  recieved.copy(message.text, sizeof(message.text) - 1, 0);
-  std::cout << recieved << std::endl;
-
-
 }

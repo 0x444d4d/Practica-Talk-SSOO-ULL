@@ -27,6 +27,7 @@ int main(int argc, char *argv[]) {
 
   while( 1 ) {
     soc_local.recieve_from( message, rem_address );
+    print( std::cout, message );
   }
 
   
