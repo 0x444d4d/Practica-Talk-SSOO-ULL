@@ -8,39 +8,36 @@
 #include <ctime>
 
 struct message_t {
-  char user[126];
-  char time[50];
-  char text[256];
+  char user[32];
+  char time[50]; //Ajustar size al tamaño del formato.
+  char text[1024];
 };
 
 
 void load_text ( std::string user, std::string time, std::string text, message_t& message ) {
-//void load_text ( std::string user, std::time_t  time, std::string text, message_t& message ) {
 
-  assert( user.size() < 126 );
+  assert( user.size() < 32 );
   assert( time.size() < 50);
-  assert( text.size() < 256);
+  assert( text.size() < 1024);
+
+  user.copy( message.user, user.size(), 0 );
+  time.copy( message.time, time.size() - 1, 0 );
+  text.copy( message.text, text.size(), 0 );
 
   message.user[user.size()] = '\0';
-  message.time[time.size()] = '\0';
+  message.time[time.size() - 1] = '\0';
   message.text[text.size()] = '\0';
-
-  strncpy( message.user, user.c_str(), user.size() );
-  strncpy( message.time, time.c_str(), time.size() );
-  strncpy( message.text, text.c_str(), text.size() );
 }
 
 
-std::ostream& print ( std::ostream& os, message_t& message ) {
+std::ostream& print ( std::ostream& os, const message_t& message ) {
   
-  os << message.user << ": " << message.time << std::endl;
-  os << message.text;
-  return os;
+  return os << std::right << message.user << ": " << message.time << '\n' << message.text << std::endl << std::endl;
 }
 
 
-/*
-std::ostream& operator <<( message_t& message, std::ostream os ) {
-  print( message, os );
+std::ostream& operator <<(std::ostream& os, const message_t& message ) {
+
+  return print(os, message );
 }
-*/
+
