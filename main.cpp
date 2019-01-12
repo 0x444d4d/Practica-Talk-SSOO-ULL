@@ -6,7 +6,10 @@
 #include <string>
 #include <cstring>
 #include <ctime>
+#include <csignal>
 #include <thread>
+#include <pthread.h>
+#include <exception>
 
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -17,10 +20,11 @@ std::atomic<bool> finish(false);
 
 sockaddr_in make_ip( const std::string& ip, int port);
 void load_message( message_t message, std::string input );
+void request_cancellation( std::thread& thread );
 
 //Funciones de los Hilos.
-void send_m( sockaddr_in& rem_address, socket_t soc_local, std::string user );
-void receive_m( sockaddr_in& rem_address, socket_t soc_local );
+void send_m( sockaddr_in& rem_address, socket_t soc_local, std::string user, std::exception_ptr s_exeption );
+void receive_m( sockaddr_in& rem_address, socket_t soc_local, std::exception_ptr r_exception );
 
 
 int main(int argc, char *argv[]) {
@@ -29,6 +33,8 @@ int main(int argc, char *argv[]) {
   std::string user;
   int port_loc, port_rem;
 
+  std::exception_ptr s_exception {}; 
+  std::exception_ptr r_exception {};
 
   std::cout << "Introduzca el usuario: " << std::endl;
   std::cin >> user;
@@ -53,19 +59,36 @@ int main(int argc, char *argv[]) {
 
 
 //HILOS
-  std::thread envio ( &send_m, std::ref(rem_address), std::ref(soc_local), std::ref(user) );
-  std::thread receptor ( &receive_m, std::ref(rem_address), std::ref(soc_local) );
 
-  while (!finish);
+  try {
 
-  envio.join();
-  receptor.join();
+    std::thread envio ( &send_m, std::ref(rem_address), std::ref(soc_local), std::ref(user), std::ref(s_exception) );
+    std::thread receptor ( &receive_m, std::ref(rem_address), std::ref(soc_local), std::ref(s_exception) );
+
+    envio.join();
+
+    request_cancellation( receptor );
+
+    if ( s_exception ) std::rethrow_exception( s_exception );
+    
+  } catch (std::bad_alloc& e) {
+    std::cerr << "Mytalk: Memoria insuficiente" << std::endl;
+    return 1;
+  } catch ( std::system_error& e ) {
+    std::cerr << "Mytalk: " << e.what() << std::endl;
+    return 2;
+  } catch( const std::exception& e) {
+    s_exception = std::current_exception();
+  }
+
+
+
 
   return 0;
 }
 
 
-void send_m( sockaddr_in& rem_address, socket_t soc_local, std::string user ) {
+void send_m( sockaddr_in& rem_address, socket_t soc_local, std::string user, std::exception_ptr s_exception) {
 
   while(!finish) {
     message_t message;
@@ -83,17 +106,22 @@ void send_m( sockaddr_in& rem_address, socket_t soc_local, std::string user ) {
       soc_local.send_to( message, rem_address );
     }
   }
+
+  return;
 }
 
 
-void receive_m( sockaddr_in& rem_address, socket_t soc_local ) {
+void receive_m( sockaddr_in& rem_address, socket_t soc_local, std::exception_ptr r_exception ) {
 
   while (!finish) {
     message_t message;
+    //pthread_testcancel();
     soc_local.recieve_from( message, rem_address );
     std::cout << message;
     fflush(stdout);
   }
+
+  return;
 }
 
 
@@ -108,4 +136,9 @@ sockaddr_in make_ip(const std::string& ip, int port) {
     inet_aton( ip.c_str(), &address.sin_addr);
 
   return address;
+}
+
+void request_cancellation( std::thread& thread ) {
+  pthread_cancel( thread.native_handle() );
+  thread.join();
 }
