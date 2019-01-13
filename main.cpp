@@ -38,6 +38,14 @@ bool operator<( const sockaddr_in& lhs, const sockaddr_in& rhs ) {
     return ( lhs.sin_addr.s_addr < rhs.sin_addr.s_addr );
 }
 
+bool operator !=( const sockaddr_in& lhs, const sockaddr_in& rhs ) {
+  if ( lhs.sin_addr.s_addr == rhs.sin_addr.s_addr )
+    if ( lhs.sin_port == rhs.sin_port ) 
+      return false;
+  return true;
+
+}
+
 
 //PENDIENTE
 //
@@ -179,9 +187,10 @@ void resend_m( socket_t soc_local, std::set<sockaddr_in> connections, std::excep
     soc_local.recieve_from( message, rem_address);
     connections.insert( rem_address );
 
-    for (auto dir: connections)
-      soc_local.send_to(message, dir );
-
+    for (auto dir: connections) {
+      if( dir != rem_address )
+        soc_local.send_to( message, dir );
+    }
   }
   return;
 }
