@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include "./socket.hpp"
+#include "./functions.hpp"
 
 #include <atomic>
 #include <string>
@@ -19,32 +20,23 @@
 #include <arpa/inet.h>
 
 
+//PENDIENTE : Interceptar señales.
 
 sockaddr_in make_ip( int port, const std::string& ip = "empty"); ///Crea un sockaddr_in a partir del puerto especificado.
-void load_message( message_t message, std::string input ); ///Carga la cadena indicada en el mensaje.
-void request_cancellation( std::thread& thread ); ///Solicita la cancelacion de un hilo y espera a su terminacion.
+//message_t& load_message( message_t message, std::string input ); ///Carga la cadena indicada en el mensaje.
+void print_help(void);
+bool connect_to_server( std::string user, socket_t socket, sockaddr_in rem_address );
+std::string get_time( void );
 
 //Funciones de los Hilos.
 void send_m( sockaddr_in& rem_address, socket_t soc_local, std::string user, std::exception_ptr s_exeption );  ///Funcion del hilo de envio para cliente.
 void receive_m( sockaddr_in& rem_address, socket_t soc_local, std::exception_ptr r_exception ); ///Funcion del hilo de recepcion para el cliente.
 void resend_m( socket_t soc_local, std::set<sockaddr_in> connections,  std::exception_ptr r_exception ); ///Funcion del hilo de envio/reception del servidor.
+void request_cancellation( std::thread& thread ); ///Solicita la cancelacion de un hilo y espera a su terminacion.
+void server_input( void );
+
 
 //Sobrecarga para ordenar los sockaddr_in en el set de conexiones.
-bool operator<( const sockaddr_in& lhs, const sockaddr_in& rhs ) {
-
-  if ( lhs.sin_addr.s_addr == rhs.sin_addr.s_addr )
-    return ( lhs.sin_port < rhs.sin_port );
-  else
-    return ( lhs.sin_addr.s_addr < rhs.sin_addr.s_addr );
-}
-
-bool operator !=( const sockaddr_in& lhs, const sockaddr_in& rhs ) {
-  if ( lhs.sin_addr.s_addr == rhs.sin_addr.s_addr )
-    if ( lhs.sin_port == rhs.sin_port ) 
-      return false;
-  return true;
-
-}
 
 
 //PENDIENTE
@@ -52,7 +44,7 @@ bool operator !=( const sockaddr_in& lhs, const sockaddr_in& rhs ) {
 //
 //
 //Cambiar argumentos por struct.
-void set_options( int argc, char **argv, bool& help, bool& server, int& port, std::string& user);
+void set_options( int argc, char **argv, bool& help, bool& server, std::string& ip, int& port, std::string& user);
 
 //Variables globales.
 std::atomic<bool> finish(false);
@@ -64,14 +56,14 @@ int main(int argc, char *argv[]) {
   std::string port_option( "talk_port" );
   std::string ip_rem( "talk_ip" );
   std::string user( "talk_username" );
-  int port_loc ( -1 ), port_rem ( -1 );
+  int port ( -1 );
 
 
   sockaddr_in loc_address;
   sockaddr_in rem_address;
   std::exception_ptr s_exception {}; 
   //Comenzamos el programa leyendo las opciones recividas.
-  set_options( argc, argv, help_option, server_option, port_loc, user ) ;
+  set_options( argc, argv, help_option, server_option, ip_rem, port, user ) ;
 
   //Codigo del modo servidor.
   //
@@ -80,17 +72,18 @@ int main(int argc, char *argv[]) {
 
     std::set<sockaddr_in> connections;
 
-    if ( port_loc == -1 ) {
+    if ( port == -1 ) {
       std::cout << "Puerto no especificado, se usará el 6000" << std::endl;
-      port_loc = 6000;
+      port = 6000;
     }
 
-    loc_address = make_ip ( port_loc );
+    loc_address = make_ip ( port );
     socket_t soc_local( loc_address );
 
-    std::thread resend ( &resend_m, std::ref(soc_local), std::ref(connections), std::ref(s_exception) );
+    std::thread resend ( &resend_m, std::ref(soc_local), std::ref(connections), std::ref(s_exception) ); ///Hilo que se encarga de reenviar los mensajes.
+    std::thread controll ( &server_input ); ///Hilo que controla la salida del programa asi como otras funciones.
 
-    resend.join();
+    controll.join();
 
     request_cancellation( resend );
 
@@ -100,21 +93,30 @@ int main(int argc, char *argv[]) {
   //
   else {
 
-    if ( port_rem == -1 ) {
+    if ( port == -1 ) {
       std::cout << "Puerto del servidor: ";
-      std::cin >> port_rem;
+      std::cin >> port;
       std::cin.ignore();
     }
 
   //DIRECCIONES
-    loc_address = make_ip (0);
-    rem_address = make_ip (/*ip_rem,*/ port_rem);
+    if ( ip_rem != "talk_ip" ) rem_address = make_ip ( port, ip_rem );
+    else rem_address = make_ip ( port );
+    loc_address = make_ip ( 0 );
     socket_t soc_local( loc_address );
 
 
-  //HILOS
-
     try {
+
+      //PENDIENTE
+      //Connect_to_server() devuelve 1 en caso de realizar la conexion correctamente.
+      //Implementar un hilo para controlar el tiempo de espera.
+      if ( connect_to_server(user, soc_local, rem_address ) )
+        std::cout << "Conectado al servidor" << std::endl;
+      else {
+        std::cout << "Error al conectarse al servidor" << std::endl;
+        std::cout << "Tiempo de espera agotado" << std::endl;
+      }
 
       std::thread envio ( &send_m, std::ref(rem_address), std::ref(soc_local), std::ref(user), std::ref(s_exception) );
       std::thread receptor ( &receive_m, std::ref(rem_address), std::ref(soc_local), std::ref(s_exception) );
@@ -134,13 +136,28 @@ int main(int argc, char *argv[]) {
     } catch( const std::exception& e) {
       s_exception = std::current_exception();
     }
-
-
   }
   return 0;
 }
 
 
+
+bool connect_to_server( std::string user, socket_t socket, sockaddr_in rem_address ) {
+  message_t message;
+
+  load_text( user, get_time(), std::string("/talk_join"), message );
+  socket.send_to( message, rem_address );
+
+  socket.recieve_from(message, rem_address);
+  if ( std::string(message.text) == std::string("/talk_connected") ) return true;
+  return false;
+}
+
+
+std::string get_time( void ) {
+  std::time_t time = std::time(nullptr);
+  return std::asctime(std::localtime(&time));
+}
 
 
 void send_m( sockaddr_in& rem_address, socket_t soc_local, std::string user, std::exception_ptr s_exception) {
@@ -154,14 +171,13 @@ void send_m( sockaddr_in& rem_address, socket_t soc_local, std::string user, std
 
     if (text == "/quit") finish = true;
     else {
-      std::time_t time1 = std::time(nullptr);
-      time = std::asctime(std::localtime(&time1));
+      //std::time_t time1 = std::time(nullptr);
+      //time = std::asctime(std::localtime(&time1));
 
-      load_text( user, time, text,  message);
+      load_text( user, get_time(), text,  message);
       soc_local.send_to( message, rem_address );
     }
   }
-
   return;
 }
 
@@ -175,24 +191,42 @@ void receive_m( sockaddr_in& rem_address, socket_t soc_local, std::exception_ptr
     std::cout << message;
     fflush(stdout);
   }
-
   return;
 }
 
 
 void resend_m( socket_t soc_local, std::set<sockaddr_in> connections, std::exception_ptr r_exception ) {
-  while (!finish) {
     sockaddr_in rem_address {};
     message_t message;
-    soc_local.recieve_from( message, rem_address);
-    connections.insert( rem_address );
+  while (!finish) {
 
-    for (auto dir: connections) {
-      if( dir != rem_address )
-        soc_local.send_to( message, dir );
+    soc_local.recieve_from( message, rem_address);
+
+    if ( std::string(message.text) == "/talk_join" ) {
+      connections.insert( rem_address );
+      std::cout << "Se ha conectado el usuario: " << message.user << std::endl;
+      load_text( message.user, message.time, "/talk_connected", message );
+      soc_local.send_to( message, rem_address );
+    }
+    else {
+      for (auto dir: connections) 
+        if( dir != rem_address )
+          soc_local.send_to( message, dir );
     }
   }
   return;
+}
+
+
+void server_input( void ) {
+  while( !finish ) {
+    std::string input;
+    std::cin >> input;
+    std::cin.ignore();
+
+    if ( input == "/help" ) print_help();
+    if ( input == "/quit" ) finish = true;
+  }
 }
 
 
@@ -217,17 +251,22 @@ void request_cancellation( std::thread& thread ) {
   thread.join();
 }
 
+void print_help( void ) {
+  std::cout << "-h : Muestra la ayuda" << std::endl;
+  std::cout << "-p : Especifica el puerto local/remoto para servidor/cliente" << std::endl;
+  std::cout << "-u : Especifica el nombre de usuario ( Solo cliente ) Si no se especifica se usan las variales de entorno" << std::endl;
+  std::cout << "-s : Inicia el programa en modo servidor" << std::endl;
+}
 
-void set_options( int argc, char **argv, bool& help, bool& server, int& port, std::string& user) {
+void set_options( int argc, char **argv, bool& help, bool& server, std::string& ip, int& port, std::string& user) {
 
   int option;
-  while ( ( option = getopt(argc, argv, "hsu:p:01") ) != -1 ) {
+  while ( ( option = getopt(argc, argv, "hscu:p:01") ) != -1 ) {
     switch (option) {
       case '0':
       case '1':
-        // Recuerda que "c" contiene la letra de la opción.
+        // Recuerda que "option" contiene la letra de la opción.
         std::cout << option << std::endl;
-        //std::printf("opción %c\n", option);
           break;
       case 'h':
         std::cout << "Manual de ayuda\n";
@@ -240,6 +279,12 @@ void set_options( int argc, char **argv, bool& help, bool& server, int& port, st
       case 'u':
         std::cout << "Usuario: " << optarg << std::endl;
         user = std::string( optarg );
+        break;
+      case 'c':
+        std::cout << "Seleccionada ip:" << optarg << std::endl;
+        ip = optarg;
+        fflush(stdout);
+        std::cin.get();
         break;
       case 'p':
         // Esta opción recibe un argumento.
@@ -269,20 +314,16 @@ void set_options( int argc, char **argv, bool& help, bool& server, int& port, st
     }
 
   if ( help == true ) {
-    //PENDIENTE
-    //Aqui escribir la informacion del funcionamiento
+    print_help();
     finish = true;
-    std::cout << "\t Ayuda de Talk" << std::endl;
-
-    std::cin.get();
     exit(0);
   }
+
   if ( server == true ) {
     user = "Server";
   } 
   else if( user == "talk_username" ) {
-    std::cout << "Introduzca el usuario: " << std::endl;
-    std::cin >> user;
-    std::cin.get();
+    const char* aux = std::getenv("USER");
+    if ( aux != nullptr ) user = aux;
   }
 }
