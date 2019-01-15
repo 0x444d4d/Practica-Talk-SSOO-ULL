@@ -1,35 +1,4 @@
-#pragma once
-
-#include "./message.hpp"
-
-#include <iostream>
-#include <string>
-#include <cstdlib>
-#include <cstring>
-#include <exception>
-
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netinet/ip.h>
-#include <arpa/inet.h>
-
-
-class socket_t {
-  private:
-    int fd_;
-    
-  public:
-
-    socket_t( sockaddr_in &address );
-    ~socket_t() {}
-
-    int make_socket( void );
-
-    void send_to( message_t& message, sockaddr_in &address);
-    void recieve_from( message_t& message, sockaddr_in &address);
-
-};
-
+#include "./socket.hpp"
 
 socket_t::socket_t( sockaddr_in &address ) {
   fd_ = make_socket();
@@ -42,7 +11,6 @@ int socket_t::make_socket( void ) {
   if ( fd < 0 ) {
     std::cerr << "Socket: Error al crear el puerto" << std::strerror(fd) << std::endl;
     throw std::system_error( errno, std::system_category(), "Socket: error al crear el puerto: " );
-    return 3;
   }
 
   return fd;
