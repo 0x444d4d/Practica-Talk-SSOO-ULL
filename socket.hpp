@@ -8,6 +8,7 @@
 #include <cstring>
 #include <exception>
 
+#include <unistd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/ip.h>

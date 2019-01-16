@@ -24,6 +24,7 @@ bool operator !=( const sockaddr_in& lhs, const sockaddr_in& rhs );
 
 void print_help(void);
 void request_cancellation( std::thread& thread ); ///Solicita la cancelacion de un hilo y espera a su terminacion.
+void signal_handler( int signal );
 bool connect_to_server( std::string user, socket_t socket, sockaddr_in rem_address );
 sockaddr_in make_ip( int port, const std::string& ip = "empty"); ///Crea un sockaddr_in a partir del puerto especificado.
 std::string get_time( void );
@@ -51,6 +52,7 @@ int main(int argc, char *argv[]) {
   std::string user( "talk_username" );
   int port ( -1 );
 
+  signal(SIGINT, signal_handler);
 
   sockaddr_in loc_address;
   sockaddr_in rem_address;
@@ -173,7 +175,6 @@ void receive_m( sockaddr_in& rem_address, socket_t soc_local, std::exception_ptr
 
 void spread( socket_t& socket, std::set<sockaddr_in>& connections, message_t& message ) {
   for (auto dir: connections)  {
-    std::cout << message;
     socket.send_to( message, dir );
   }
 }
@@ -198,7 +199,10 @@ void resend_m( socket_t soc_local, std::set<sockaddr_in>& connections, std::exce
       load_text( "talk_server", message.time, "/talk_connected", message );
       soc_local.send_to( message, rem_address );
     }
-    else spread( soc_local, rem_address, connections, message );
+    else {
+      std::cout << message << std::endl;
+      spread( soc_local, rem_address, connections, message );
+    }
   }
   return;
 }
@@ -369,4 +373,10 @@ bool connect_to_server( std::string user, socket_t socket, sockaddr_in rem_addre
   socket.recieve_from(message, rem_address);
   if ( std::string(message.text) == std::string("/talk_connected") ) return true;
   return false;
+}
+
+void signal_handler( int signal ) {
+  std::cout << "TALK: señal( " << signal << " ) iterceptada" << std::endl;
+  if ( signal != 2 ) throw std::runtime_error( "recibida señal SIGHUP/SIGTERM" );
+  finish = true;
 }
